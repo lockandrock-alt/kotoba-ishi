@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ことばの石</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@700&display=swap">
+<style>
+:root{box-sizing:border-box;--bg:#1d4c57;--panel:#143840;--ink:#f3efe6;--hint:#9fc4c4;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1d4c57}}
+:root[data-theme="dark"]{--bg:#1d4c57}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Yu Gothic",sans-serif;overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;display:block}
+#title{position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);left:16px;right:16px;font-size:15px;color:var(--hint);pointer-events:none;line-height:1.6}
+#bar{position:fixed;left:0;right:0;bottom:0;display:flex;gap:8px;padding:10px 12px calc(env(safe-area-inset-bottom,0px) + 10px);background:var(--panel)}
+input{flex:1;min-width:0;font:inherit;font-size:16px;padding:10px 14px;border-radius:999px;border:0;background:#0d2a30;color:var(--ink)}
+input:focus-visible,button:focus-visible{outline:2px solid #ffd479;outline-offset:2px}
+button{font:inherit;font-size:15px;border:0;border-radius:999px;padding:10px 16px;background:#ffd479;color:#2a2410;cursor:pointer}
+button.sub{background:#2d6672;color:var(--ink)}
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="文字の石が転がる砂浜"></canvas>
+<div id="title">ことばを打つと、ひと文字ずつ石になって落ちてきます。<br>つかんで投げたり、「傾ける」で浜辺ごと傾けてみてください。</div>
+<div id="bar">
+  <input id="t" type="text" placeholder="ことばを入力" maxlength="30" aria-label="ことば">
+  <button id="go">落とす</button>
+  <button id="tilt" class="sub">傾ける</button>
+</div>
+<script>
+(function(){
+var cv=document.getElementById('c'),cx=cv.getContext('2d');
+var W,H,D=Math.min(window.devicePixelRatio||1,2);
+var bodies=[],G=[[0,1],[-1,0],[0,-1],[1,0]],gi=0,gv=[0,1],MAX=140;
+var reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+function size(){W=innerWidth;H=innerHeight;cv.width=W*D;cv.height=H*D;cx.setTransform(D,0,0,D,0,0)}
+size();addEventListener('resize',size);
+function add(ch){
+  if(bodies.length>=MAX)bodies.shift();
+  var r=22+Math.random()*10;
+  bodies.push({x:r+Math.random()*(W-2*r),y:-r-Math.random()*60,vx:(Math.random()-.5)*4,vy:0,r:r,ch:ch,h:Math.floor(Math.random()*360),rot:Math.random()*6});
+}
+function drop(s){var a=Array.from(s).filter(function(c){return c.trim()});a.forEach(function(c,i){setTimeout(function(){add(c)},i*110)})}
+var inp=document.getElementById('t');
+function go(){if(inp.value){drop(inp.value);inp.value=''}}
+document.getElementById('go').onclick=go;
+inp.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.isComposing)go()});
+var tl=document.getElementById('tilt');
+tl.onclick=function(){gi=(gi+1)%4};
+var drag=null,lp=null;
+function pt(e){return{x:e.clientX,y:e.clientY}}
+cv.addEventListener('pointerdown',function(e){
+  var p=pt(e),best=null,bd=1e9;
+  bodies.forEach(function(b){var d=Math.hypot(b.x-p.x,b.y-p.y);if(d<b.r+14&&d<bd){bd=d;best=b}});
+  if(best){drag=best;lp=p;cv.setPointerCapture(e.pointerId)}
+});
+cv.addEventListener('pointermove',function(e){
+  if(!drag)return;var p=pt(e);
+  drag.vx=(p.x-drag.x)*.5;drag.vy=(p.y-drag.y)*.5;drag.x=p.x;drag.y=p.y;
+});
+function up(){drag=null}
+cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+function step(){
+  gv[0]+=(G[gi][0]-gv[0])*.08;gv[1]+=(G[gi][1]-gv[1])*.08;
+  var gs=reduce?.25:.5,i,j,a,b;
+  for(i=0;i<bodies.length;i++){
+    a=bodies[i];if(a===drag)continue;
+    a.vx+=gv[0]*gs;a.vy+=gv[1]*gs;a.vx*=.995;a.vy*=.995;a.x+=a.vx;a.y+=a.vy;a.rot+=a.vx*.02;
+  }
+  var top=0,bot=H-62-(parseInt(getComputedStyle(document.documentElement).paddingBottom)||0);
+  for(var it=0;it<3;it++){
+    for(i=0;i<bodies.length;i++){
+      a=bodies[i];
+      if(a.x<a.r){a.x=a.r;a.vx*=-.4}
+      if(a.x>W-a.r){a.x=W-a.r;a.vx*=-.4}
+      if(a.y>bot-a.r){a.y=bot-a.r;a.vy*=-.35;a.vx*=.97}
+      if(a.y<top-200)a.y=top-200;
+      for(j=i+1;j<bodies.length;j++){
+        b=bodies[j];
+        var dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy),m=a.r+b.r;
+        if(d<m&&d>.001){
+          var nx=dx/d,ny=dy/d,o=(m-d)/2;
+          if(a!==drag){a.x-=nx*o;a.y-=ny*o}
+          if(b!==drag){b.x+=nx*o;b.y+=ny*o}
+          var rv=(b.vx-a.vx)*nx+(b.vy-a.vy)*ny;
+          if(rv<0){var k=rv*.6;if(a!==drag){a.vx+=nx*k;a.vy+=ny*k}if(b!==drag){b.vx-=nx*k;b.vy-=ny*k}}
+        }
+      }
+    }
+  }
+}
+function draw(){
+  cx.clearRect(0,0,W,H);
+  cx.textAlign='center';cx.textBaseline='middle';
+  bodies.forEach(function(b){
+    cx.save();cx.translate(b.x,b.y);
+    cx.fillStyle='hsl('+b.h+',45%,72%)';
+    cx.beginPath();cx.ellipse(0,0,b.r,b.r*.92,b.rot,0,6.3);cx.fill();
+    cx.fillStyle='rgba(0,0,0,.28)';
+    cx.font='700 '+Math.round(b.r*1.15)+'px "Zen Maru Gothic","Hiragino Maru Gothic ProN",sans-serif';
+    cx.fillText(b.ch,0,2);
+    cx.restore();
+  });
+}
+function loop(){step();draw();requestAnimationFrame(loop)}
+loop();
+(function(s){
+  var a=Array.from(s),r=Math.min(30,(W-24)/(a.length*2)),pb=parseInt(getComputedStyle(document.documentElement).paddingBottom)||0;
+  var x0=W/2-(a.length-1)*r;
+  a.forEach(function(c,i){bodies.push({x:x0+i*2*r,y:H-62-pb-r,vx:0,vy:0,r:r,ch:c,h:i*50+20,rot:0})});
+})('うそぴょーん');
+})();
+</script>
+</body>
+</html>
